@@ -913,3 +913,39 @@ def grep_energy_from_line(line):
         return float(line.split('=')[1].split('Ry')[0]) * CONSTANTS.ry_to_ev
     except Exception:
         raise QEOutputParsingError('Error while parsing energy')
+
+
+def parse_nlcg(nlcg_out):
+    """Parses the nlcg content of a SIRIUS-QE `pw.x` calculation with direct minimization enabled. 
+
+    :param nlcg_out: the nlcg.out content as a string
+    :returns: tuple of two dictionaries, with the parsed data and log messages, respectively
+    """
+
+    logs = get_logging_container()
+
+    iteration_pattern = r'(\d+)\s+([\d.-]+e[+-]\d\d)\t([\d.-]+e[+-]\d\d)'
+    iteration_fields = ('Iteration', 'Free energy', 'Residual')
+
+    iterations = []
+    nlcg_converged = False
+
+    for line in nlcg_out.splitlines():
+        
+        match = re.match(iteration_pattern, line)
+        
+        if match:
+            iterations.append(dict(zip(iteration_fields, match.groups())))
+            
+        if 'NLCG SUCCESS' in line:
+            nlcg_converged = True
+
+    if not nlcg_converged:
+        logs.error.append('ERROR_NLCG_CONVERGENCE_NOT_REACHED')
+
+    parsed_data = {
+        'iterations': iterations,
+        'nlcg_converged': nlcg_converged
+    }
+
+    return parsed_data, logs

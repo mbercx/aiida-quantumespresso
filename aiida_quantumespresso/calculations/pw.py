@@ -13,7 +13,7 @@ class PwCalculation(BasePwCpInputGenerator):
     """`CalcJob` implementation for the pw.x code of Quantum ESPRESSO."""
 
     _automatic_namelists = {
-        'scf': ['CONTROL', 'SYSTEM', 'ELECTRONS'],
+        'scf': ['CONTROL', 'SYSTEM', 'ELECTRONS', 'NLCG'],
         'nscf': ['CONTROL', 'SYSTEM', 'ELECTRONS'],
         'bands': ['CONTROL', 'SYSTEM', 'ELECTRONS'],
         'relax': ['CONTROL', 'SYSTEM', 'ELECTRONS', 'IONS'],
@@ -91,6 +91,8 @@ class PwCalculation(BasePwCpInputGenerator):
             message='The retrieved folder contained multiple XML files.')
         spec.exit_code(305, 'ERROR_OUTPUT_FILES',
             message='Both the stdout and XML output files could not be read or parsed.')
+        spec.exit_code(306, 'ERROR_OUTPUT_NLCG_MISSING',
+            message='Found NLCG in input control, but nlcg.out file is missing.')
         spec.exit_code(310, 'ERROR_OUTPUT_STDOUT_READ',
             message='The stdout output file could not be read.')
         spec.exit_code(311, 'ERROR_OUTPUT_STDOUT_PARSE',
@@ -103,6 +105,8 @@ class PwCalculation(BasePwCpInputGenerator):
             message='The XML output file could not be parsed.')
         spec.exit_code(322, 'ERROR_OUTPUT_XML_FORMAT',
             message='The XML output file has an unsupported format.')
+        spec.exit_code(330, 'ERROR_OUTPUT_NLCG_READ',
+            message='The nlcg.out file could not be read.')
         spec.exit_code(340, 'ERROR_OUT_OF_WALLTIME_INTERRUPTED',
             message='The calculation stopped prematurely because it ran out of walltime but the job was killed by the '
                     'scheduler before the files were safely written to disk for a potential restart.')
@@ -114,7 +118,9 @@ class PwCalculation(BasePwCpInputGenerator):
             message='The calculation stopped prematurely because it ran out of walltime.')
         spec.exit_code(410, 'ERROR_ELECTRONIC_CONVERGENCE_NOT_REACHED',
             message='The electronic minimization cycle did not reach self-consistency.')
-
+        spec.exit_code(420, 'ERROR_NLCG_CONVERGENCE_NOT_REACHED',
+            message='The direct NLCG minimization did not reach the convergence threshold.')
+        
         spec.exit_code(461, 'ERROR_DEXX_IS_NEGATIVE',
             message='The code failed with negative dexx in the exchange calculation.')
         spec.exit_code(462, 'ERROR_COMPUTING_CHOLESKY',
