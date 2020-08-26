@@ -926,17 +926,25 @@ def parse_nlcg(nlcg_out):
 
     iteration_pattern = r'(\d+)\s+([\d.-]+e[+-]\d\d)\t([\d.-]+e[+-]\d\d)'
     iteration_fields = ('Iteration', 'Free energy', 'Residual')
+    free_energy_pattern = r'F\s+:\s+([\d.-]+e[+-]\d\d)'
 
     iterations = []
+    free_energy = None
     nlcg_converged = False
 
     for line in nlcg_out.splitlines():
         
-        match = re.match(iteration_pattern, line)
+        match_iteration = re.match(iteration_pattern, line)
+        match_free_energy = re.match(free_energy_pattern, line)
         
-        if match:
-            iterations.append(dict(zip(iteration_fields, match.groups())))
+        if match_iteration:
+            it = match_iteration.groups()
+            iteration_data = (int(it[0]), float(it[1]), float(it[2]))
+            iterations.append(dict(zip(iteration_fields, iteration_data)))
             
+        elif match_free_energy:
+            free_energy = float(match_free_energy.groups()[0])
+
         if 'NLCG SUCCESS' in line:
             nlcg_converged = True
 
@@ -945,6 +953,7 @@ def parse_nlcg(nlcg_out):
 
     parsed_data = {
         'iterations': iterations,
+        'free_energy': free_energy,
         'nlcg_converged': nlcg_converged
     }
 

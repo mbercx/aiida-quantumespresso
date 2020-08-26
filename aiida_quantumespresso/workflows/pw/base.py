@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """Workchain to run a Quantum ESPRESSO pw.x calculation with automated error handling and restarts."""
+import numpy as np
+
 from aiida import orm
 from aiida.common import AttributeDict, exceptions
 from aiida.common.lang import type_check
@@ -573,6 +575,21 @@ class PwBaseWorkChain(ProtocolMixin, BaseRestartWorkChain):
         self.ctx.inputs.structure = calculation.outputs.output_structure
         action = 'no electronic convergence but clean shutdown: reduced beta mixing from {} to {} restarting from ' \
                  'scratch but using output structure.'.format(mixing_beta, mixing_beta_new)
+        self.report_error_handled(calculation, action)
+        return ProcessHandlerReport(True)
+
+    @process_handler(priority=450, exit_codes=[
+        PwCalculation.exit_codes.ERROR_NLCG_CONVERGENCE_NOT_REACHED,])
+    def handle_nlcg_convergence_not_reached(self, calculation):
+        nbnd = calculation.outputs['output_parameters']['number_of_bands']
+        nbnd_new = int(np.ceil(nbnd * 1.4))
+
+        self.ctx.restart_calc = calculation
+        self.ctx.inputs.parameters.setdefault('SYSTEM', {})['nbnd'] = nbnd_new
+
+        action = 'increased number of bands from {} to {} and restarting from the last calculation'.format(
+            nbnd, nbnd_new
+        )
         self.report_error_handled(calculation, action)
         return ProcessHandlerReport(True)
 
