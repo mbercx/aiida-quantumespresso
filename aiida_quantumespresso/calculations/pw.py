@@ -13,7 +13,7 @@ class PwCalculation(BasePwCpInputGenerator):
     """`CalcJob` implementation for the pw.x code of Quantum ESPRESSO."""
 
     _automatic_namelists = {
-        'scf': ['CONTROL', 'SYSTEM', 'ELECTRONS', 'NLCG'],
+        'scf': ['CONTROL', 'SYSTEM', 'ELECTRONS'],
         'nscf': ['CONTROL', 'SYSTEM', 'ELECTRONS'],
         'bands': ['CONTROL', 'SYSTEM', 'ELECTRONS'],
         'relax': ['CONTROL', 'SYSTEM', 'ELECTRONS', 'IONS'],

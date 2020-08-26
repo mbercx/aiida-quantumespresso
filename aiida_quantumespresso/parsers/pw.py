@@ -26,6 +26,7 @@ class PwParser(Parser):
         self.exit_code_xml = None
         self.exit_code_stdout = None
         self.exit_code_parser = None
+        self.exit_code_nlcg = None
 
         try:
             settings = self.node.inputs.settings.get_dict()
@@ -91,6 +92,9 @@ class PwParser(Parser):
         if atomic_occupations:
             self.out('output_atomic_occupations', orm.Dict(dict=atomic_occupations))
 
+        if parsed_nlcg:
+            parsed_parameters['nlcg'] = parsed_nlcg
+
         self.out('output_parameters', orm.Dict(dict=parsed_parameters))
 
         # Emit the logs returned by the XML and stdout parsing through the logger
@@ -127,7 +131,7 @@ class PwParser(Parser):
             exit_code = self.validate_electronic(trajectory, parsed_parameters, logs_stdout)
             if exit_code:
                 return self.exit(exit_code)
-        elif 'ERROR_NLCG_CONVERGENCE_NOT_REACHED' in logs['error']:
+        elif 'ERROR_NLCG_CONVERGENCE_NOT_REACHED' in logs_nlcg['error']:
             return self.exit(self.exit_codes.ERROR_NLCG_CONVERGENCE_NOT_REACHED)
 
         # First determine issues that can occurr for all calculation types. Note that the generic errors, that are
