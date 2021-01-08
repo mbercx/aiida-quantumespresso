@@ -27,7 +27,8 @@
             "quantumespresso.pw2wannier90 = aiida_quantumespresso.calculations.pw2wannier90:Pw2wannier90Calculation",
             "quantumespresso.pwimmigrant = aiida_quantumespresso.calculations.pwimmigrant:PwimmigrantCalculation",
             "quantumespresso.q2r = aiida_quantumespresso.calculations.q2r:Q2rCalculation",
-            "quantumespresso.seekpath_structure_analysis = aiida_quantumespresso.calculations.functions.seekpath_structure_analysis:seekpath_structure_analysis"
+            "quantumespresso.seekpath_structure_analysis = aiida_quantumespresso.calculations.functions.seekpath_structure_analysis:seekpath_structure_analysis",
+            "quantumespresso.create_magnetic_allotrope = aiida_quantumespresso.calculations.functions.create_magnetic_allotrope:create_magnetic_allotrope"
         ],
         "aiida.data": [
             "quantumespresso.force_constants = aiida_quantumespresso.data.force_constants:ForceConstantsData"
