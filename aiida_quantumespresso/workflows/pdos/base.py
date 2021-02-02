@@ -51,11 +51,15 @@ from six.moves import map
 
 from plumpy import ProcessSpec  # pylint: disable=unused-import
 
-from aiida import engine, orm, plugins
-from aiida.common import AttributeDict, LinkType
+from aiida import orm, plugins
+from aiida.engine import WorkChain, ToContext, if_
+from aiida.common import AttributeDict
 from aiida.orm.nodes.data.base import to_aiida_type
 
 from aiida_quantumespresso.utils.mapping import prepare_process_inputs
+from aiida_quantumespresso.workflows.protocols.utils import recursive_merge
+
+from ..protocols.utils import ProtocolMixin
 
 
 def get_parameter_schema():
@@ -86,7 +90,7 @@ def get_parameter_schema():
                 }
             }
         },
-        'required': ['Emin', 'Emax', 'DeltaE'],
+        'required': ['DeltaE'],
         'additionalProperties': False,
         'properties': {
             'align_to_fermi': {
@@ -116,7 +120,7 @@ def get_parameter_schema():
     }
 
 
-def validate_dos_parameters(node):
+def validate_dos_parameters(node, _):
     """Validate DOS parameters.
 
     - shared: Emin | Emax | DeltaE
@@ -155,7 +159,7 @@ DosCalculation = plugins.CalculationFactory('quantumespresso.dos')
 ProjwfcCalculation = plugins.CalculationFactory('quantumespresso.projwfc')
 
 
-class PdosWorkChain(engine.WorkChain):
+class PdosWorkChain(ProtocolMixin, WorkChain):
     """A WorkChain to compute Total & Partial Density of States of a structure, using Quantum Espresso."""
 
     @classmethod
@@ -163,31 +167,28 @@ class PdosWorkChain(engine.WorkChain):
         # type: (ProcessSpec) -> None
         # yapf: disable
         """Define the process specification."""
-        super(PdosWorkChain, cls).define(spec)
+        super().define(spec)
 
-        # Base SCF & NSCF inputs
         spec.expose_inputs(
             PwBaseWorkChain, namespace='base',
             exclude=('clean_workdir', 'pw.parent_folder'),
             namespace_options={
-                'help': 'Inputs for the `PwBaseWorkChain` to run scf and nscf calculations.'})
+                'help': 'Inputs for the `PwBaseWorkChain` to run `scf` and `nscf` calculations.'})
         # TODO optionally allow PwCalculation output parent_folder? # pylint: disable=fixme
 
-        # optional NSCF overrides
         spec.expose_inputs(
             PwBaseWorkChain, namespace='nscf',
-            include=('kpoints', 'kpoints_distance', 'kpoints_force_parity', 'pw.metadata.options'),
+            include=('kpoints', 'kpoints_distance', 'kpoints_force_parity', 'pw.metadata.options', 'pw.parameters'),
             namespace_options={
-                'help': 'Optional inputs for nscf calculation, that override those set in the `base` namespace'})
+                'help': 'Optional inputs for `nscf` calculation, that override those set in the `base` namespace.'})
         spec.input('nscf.pw.metadata.options', valid_type=dict, required=False)
 
-        # DOS & PDOS
         spec.input(
             'parameters',
             valid_type=orm.Dict,
             serializer=to_aiida_type,
             validator=validate_dos_parameters,
-            help='Combined input parameters for dos.x and projwfc.x'
+            help='Combined input parameters for the `dos.x` and `projwfc.x` calculations.'
         )
         spec.expose_inputs(DosCalculation, namespace='dos', exclude=('parent_folder', 'parameters'))
         spec.expose_inputs(ProjwfcCalculation, namespace='projwfc', exclude=('parent_folder', 'parameters'))
@@ -204,7 +205,7 @@ class PdosWorkChain(engine.WorkChain):
             'clean_workdir',
             valid_type=orm.Bool,
             serializer=to_aiida_type,
-            default=orm.Bool(False),
+            default=lambda: orm.Bool(False),
             help='If ``True``, work directories of all called calculation will be cleaned at the end of execution.'
         )
         spec.input(
@@ -220,7 +221,7 @@ class PdosWorkChain(engine.WorkChain):
             cls.inspect_scf,
             cls.run_nscf,
             cls.inspect_nscf,
-            engine.if_(cls.clean_serial)(
+            if_(cls.clean_serial)(
                 cls.run_dos_serial,
                 cls.inspect_dos_serial,
                 cls.run_projwfc_serial,
@@ -249,6 +250,42 @@ class PdosWorkChain(engine.WorkChain):
         spec.expose_outputs(DosCalculation, namespace='dos')
         spec.expose_outputs(ProjwfcCalculation, namespace='projwfc')
 
+    @classmethod
+    def get_builder_from_protocol(
+        cls, pw_code, dos_code, projwfc_code, structure, protocol=None, overrides=None, **kwargs
+    ):
+        """Return a builder prepopulated with inputs selected according to the chosen protocol.
+
+        :param pw_code: the ``Code`` instance configured for the ``quantumespresso.pw`` plugin.
+        :param dos_code: the ``Code`` instance configured for the ``quantumespresso.dos`` plugin.
+        :param projwfc_code: the ``Code`` instance configured for the ``quantumespresso.projwfc`` plugin.
+        :param structure: the ``StructureData`` instance to use.
+        :param protocol: protocol to use, if not specified, the default will be used.
+        :param overrides: optional dictionary of inputs to override the defaults of the protocol.
+        :param kwargs: additional keyword arguments that will be passed to the ``get_builder_from_protocol`` of all the
+            sub processes that are called by this workchain.
+        :return: a process builder instance with all inputs defined ready for launch.
+        """
+
+        args = (pw_code, structure, protocol)
+
+        inputs = cls.get_protocol_inputs(protocol, overrides)
+        builder = cls.get_builder()
+
+        base = PwBaseWorkChain.get_builder_from_protocol(*args, overrides=inputs.get('base', None), **kwargs)
+        base.pop('clean_workdir', None)
+        nscf = inputs.get('nscf', {'pw': {}})
+
+        builder.base = base
+        builder.nscf.pw['parameters'] = orm.Dict(dict=nscf['pw']['parameters']) # pylint: disable=no-member
+        builder.parameters = orm.Dict(dict=inputs['parameters'])
+        builder.dos.code = dos_code  # pylint: disable=no-member
+        builder.projwfc.code = projwfc_code  # pylint: disable=no-member
+        builder.clean_workdir = orm.Bool(inputs['clean_workdir'])
+        builder.parameters = orm.Dict(dict=inputs['parameters'])
+
+        return builder
+
     def setup(self):
         """Initialize context variables that are used during the logical flow of the workchain."""
         self.ctx.clean_serial = 'serial_clean' in self.inputs and self.inputs.serial_clean.value
@@ -265,9 +302,6 @@ class PdosWorkChain(engine.WorkChain):
         """Run an SCF calculation, to generate the wavefunction."""
         inputs = AttributeDict(self.exposed_inputs(PwBaseWorkChain, 'base'))
         inputs.pw.parameters = inputs.pw.parameters.get_dict()
-        inputs.pw.parameters.setdefault('CONTROL', {})
-        inputs.pw.parameters['CONTROL']['calculation'] = 'scf'
-        inputs.pw.parameters['CONTROL']['restart_mode'] = 'from_scratch'
 
         inputs.metadata.call_link_label = 'workchain_scf'
         inputs = prepare_process_inputs(PwBaseWorkChain, inputs)
@@ -279,7 +313,7 @@ class PdosWorkChain(engine.WorkChain):
 
         self.report(f'launching SCF PwBaseWorkChain<{future.pk}>')
 
-        return engine.ToContext(workchain_scf=future)
+        return ToContext(workchain_scf=future)
 
     def inspect_scf(self):
         """Verify that the SCF calculation finished successfully."""
@@ -305,19 +339,23 @@ class PdosWorkChain(engine.WorkChain):
         nscf_inputs = AttributeDict(self.exposed_inputs(PwBaseWorkChain, 'nscf'))
         inputs = AttributeDict(self.exposed_inputs(PwBaseWorkChain, 'base'))
         inputs.pw.parent_folder = self.ctx.scf_parent_folder
+
         if 'kpoints' in nscf_inputs or 'kpoints_distance' in nscf_inputs:
             for key in ['kpoints', 'kpoints_distance', 'kpoints_force_parity']:
                 inputs.pop(key, None)
                 if key in nscf_inputs:
                     inputs[key] = nscf_inputs[key]
+
         inputs.pw.parameters = inputs.pw.parameters.get_dict()
         inputs.pw.parameters.setdefault('CONTROL', {})
         inputs.pw.parameters['CONTROL']['calculation'] = 'nscf'
         inputs.pw.parameters['CONTROL']['restart_mode'] = 'from_scratch'
         inputs.pw.parameters.setdefault('SYSTEM', {})
-        # TODO have an input dict to control override of base parameters (with these as default)? # pylint: disable=fixme
         inputs.pw.parameters['SYSTEM']['occupations'] = 'tetrahedra'
+        inputs.pw.parameters['SYSTEM'].pop('smearing', None)
         inputs.pw.parameters['SYSTEM']['nosym'] = True
+        inputs.pw.parameters = recursive_merge(inputs.pw.parameters, nscf_inputs.pw.parameters.get_dict())
+
         try:
             inputs.pw.metadata.options = nscf_inputs.pw.metadata.options
         except AttributeError:
@@ -333,7 +371,7 @@ class PdosWorkChain(engine.WorkChain):
 
         self.report(f'launching NSCF PwBaseWorkChain<{future.pk}>')
 
-        return engine.ToContext(workchain_nscf=future)
+        return ToContext(workchain_nscf=future)
 
     def inspect_nscf(self):
         """Verify that the NSCF calculation finished successfully."""
@@ -348,6 +386,8 @@ class PdosWorkChain(engine.WorkChain):
             if cleaned_calcs:
                 self.report(f"cleaned remote folders of SCF calculations: {' '.join(map(str, cleaned_calcs))}")
 
+        self.ctx.nscf_emin = workchain.outputs.output_band.get_array('bands').min()
+        self.ctx.nscf_emax = workchain.outputs.output_band.get_array('bands').max()
         self.ctx.nscf_parent_folder = workchain.outputs.remote_folder
         self.ctx.nscf_fermi = workchain.outputs.output_parameters.dict.fermi_energy
         # TODO ensure fermi units are eV (and convert)?  # pylint: disable=fixme
@@ -358,11 +398,14 @@ class PdosWorkChain(engine.WorkChain):
         dos_inputs.parent_folder = self.ctx.nscf_parent_folder
         dos_dict = self.inputs.parameters.get_dict()
         dos_dict.pop('projwfc_only', None)
+
         if dos_dict.pop('align_to_fermi', False):
-            dos_dict['Emin'] = dos_dict['Emin'] + self.ctx.nscf_fermi
-            dos_dict['Emax'] = dos_dict['Emax'] + self.ctx.nscf_fermi
+            dos_dict['Emin'] = dos_dict.get('Emin', self.ctx.nscf_emin) + self.ctx.nscf_fermi
+            dos_dict['Emax'] = dos_dict.get('Emax', self.ctx.nscf_emax) + self.ctx.nscf_fermi
+
         for key, val in dos_dict.pop('dos_only', {}).items():
             dos_dict[key] = val
+
         dos_inputs.parameters = orm.Dict(dict={
             'DOS': dos_dict
         })
@@ -375,11 +418,14 @@ class PdosWorkChain(engine.WorkChain):
         projwfc_inputs.parent_folder = self.ctx.nscf_parent_folder
         projwfc_dict = self.inputs.parameters.get_dict()
         projwfc_dict.pop('dos_only', None)
+
         if projwfc_dict.pop('align_to_fermi', False):
-            projwfc_dict['Emin'] = projwfc_dict['Emin'] + self.ctx.nscf_fermi
-            projwfc_dict['Emax'] = projwfc_dict['Emax'] + self.ctx.nscf_fermi
+            projwfc_dict['Emin'] = projwfc_dict.get('Emin', self.ctx.nscf_emin) + self.ctx.nscf_fermi
+            projwfc_dict['Emax'] = projwfc_dict.get('Emax', self.ctx.nscf_emax) + self.ctx.nscf_fermi
+
         for key, val in projwfc_dict.pop('projwfc_only', {}).items():
             projwfc_dict[key] = val
+
         projwfc_inputs.parameters = orm.Dict(dict={
             'PROJWFC': projwfc_dict
         })
@@ -389,15 +435,18 @@ class PdosWorkChain(engine.WorkChain):
     def run_dos_serial(self):
         """Run DOS calculation."""
         dos_inputs = self._generate_dos_inputs()
+
         if self.ctx.is_test_run:
             return dos_inputs
+
         future_dos = self.submit(DosCalculation, **dos_inputs)
         self.report(f'launching DosCalculation<{future_dos.pk}>')
-        return engine.ToContext(calc_dos=future_dos)
+        return ToContext(calc_dos=future_dos)
 
     def inspect_dos_serial(self):
         """Verify that the DOS calculation finished successfully, then clean its remote directory."""
         calculation = self.ctx.calc_dos
+
         if not calculation.is_finished_ok:
             self.report(f'DosCalculation failed with exit status {calculation.exit_status}')
             return self.exit_codes.ERROR_SUB_PROCESS_FAILED_DOS
@@ -410,11 +459,13 @@ class PdosWorkChain(engine.WorkChain):
     def run_projwfc_serial(self):
         """Run Projwfc calculation."""
         projwfc_inputs = self._generate_projwfc_inputs()
+
         if self.ctx.is_test_run:
             return projwfc_inputs
+
         future_projwfc = self.submit(ProjwfcCalculation, **projwfc_inputs)
         self.report(f'launching ProjwfcCalculation<{future_projwfc.pk}>')
-        return engine.ToContext(calc_projwfc=future_projwfc)
+        return ToContext(calc_projwfc=future_projwfc)
 
     def inspect_projwfc_serial(self):
         """Verify that the Projwfc calculation finished successfully, then clean its remote directory."""
@@ -466,15 +517,10 @@ class PdosWorkChain(engine.WorkChain):
     def results(self):
         """Attach the desired output nodes directly as outputs of the workchain."""
         self.report('workchain successfully completed')
-        # TODO exposed_outputs for CalcJobs is fixed in aiida-core v1.0.0b6 # pylint: disable=fixme
-        # self.out_many(self.exposed_outputs(calc_node, process_class, namespace=pname))
-        namespace_separator = self.spec().namespace_separator
-        for link_triple in self.ctx.workchain_nscf.get_outgoing(link_type=LinkType.RETURN).link_triples:
-            self.out('nscf' + namespace_separator + link_triple.link_label, link_triple.node)
-        for link_triple in self.ctx.calc_dos.get_outgoing(link_type=LinkType.CREATE).link_triples:
-            self.out('dos' + namespace_separator + link_triple.link_label, link_triple.node)
-        for link_triple in self.ctx.calc_projwfc.get_outgoing(link_type=LinkType.CREATE).link_triples:
-            self.out('projwfc' + namespace_separator + link_triple.link_label, link_triple.node)
+
+        self.out_many(self.exposed_outputs(self.ctx.workchain_nscf, PwBaseWorkChain, namespace='nscf'))
+        self.out_many(self.exposed_outputs(self.ctx.calc_dos, DosCalculation, namespace='dos'))
+        self.out_many(self.exposed_outputs(self.ctx.calc_projwfc, ProjwfcCalculation, namespace='projwfc'))
 
     def on_terminated(self):
         """Clean the working directories of all child calculations if `clean_workdir=True` in the inputs."""
