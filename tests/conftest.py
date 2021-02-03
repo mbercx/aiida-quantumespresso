@@ -623,7 +623,7 @@ def generate_workchain_pdos(generate_workchain, generate_inputs_pw, fixture_code
     def _generate_workchain_pdos():
         from aiida_quantumespresso.utils.resources import get_default_options
 
-        entry_point = 'quantumespresso.pdos.base'
+        entry_point = 'quantumespresso.pdos'
 
         scf_pw_inputs = generate_inputs_pw()
         kpoints = scf_pw_inputs.pop('kpoints')

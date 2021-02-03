@@ -58,7 +58,7 @@ from aiida.orm.nodes.data.base import to_aiida_type
 
 from aiida_quantumespresso.utils.mapping import prepare_process_inputs
 
-from ..protocols.utils import ProtocolMixin
+from .protocols.utils import ProtocolMixin
 
 
 def get_parameter_schema():
