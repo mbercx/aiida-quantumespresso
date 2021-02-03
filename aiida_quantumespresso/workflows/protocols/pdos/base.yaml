@@ -6,6 +6,7 @@ default_inputs:
                 CONTROL:
                     restart_mode: from_scratch
     nscf:
+        kpoints_distance: 0.10
         pw:
             parameters:
                 CONTROL:

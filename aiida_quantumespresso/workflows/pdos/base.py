@@ -57,7 +57,6 @@ from aiida.common import AttributeDict
 from aiida.orm.nodes.data.base import to_aiida_type
 
 from aiida_quantumespresso.utils.mapping import prepare_process_inputs
-from aiida_quantumespresso.workflows.protocols.utils import recursive_merge
 
 from ..protocols.utils import ProtocolMixin
 
@@ -168,21 +167,23 @@ class PdosWorkChain(ProtocolMixin, WorkChain):
         # yapf: disable
         """Define the process specification."""
         super().define(spec)
+        spec.input('structure')
 
         spec.expose_inputs(
-            PwBaseWorkChain, namespace='base',
-            exclude=('clean_workdir', 'pw.parent_folder'),
-            namespace_options={
-                'help': 'Inputs for the `PwBaseWorkChain` to run `scf` and `nscf` calculations.'})
-        # TODO optionally allow PwCalculation output parent_folder? # pylint: disable=fixme
-
+            PwBaseWorkChain,
+            namespace='base_scf',
+            exclude=('clean_workdir', 'pw.structure', 'pw.parent_folder'),
+            namespace_options={'help': 'Inputs for the `PwBaseWorkChain` to run `scf` and `nscf` calculations.'}
+        )
         spec.expose_inputs(
-            PwBaseWorkChain, namespace='nscf',
-            include=('kpoints', 'kpoints_distance', 'kpoints_force_parity', 'pw.metadata.options', 'pw.parameters'),
+            PwBaseWorkChain,
+            namespace='base_nscf',
+            exclude=('clean_workdir', 'pw.structure', 'pw.parent_folder'),
+            # include=('kpoints', 'kpoints_distance', 'kpoints_force_parity', 'pw.metadata.options', 'pw.parameters'),
             namespace_options={
-                'help': 'Optional inputs for `nscf` calculation, that override those set in the `base` namespace.'})
-        spec.input('nscf.pw.metadata.options', valid_type=dict, required=False)
-
+                'help': 'Optional inputs for `nscf` calculation, that override those set in the `base` namespace.'
+            }  # TODO optionally allow PwCalculation output parent_folder? # pylint: disable=fixme
+        )
         spec.input(
             'parameters',
             valid_type=orm.Dict,
@@ -194,7 +195,8 @@ class PdosWorkChain(ProtocolMixin, WorkChain):
         spec.expose_inputs(ProjwfcCalculation, namespace='projwfc', exclude=('parent_folder', 'parameters'))
 
         # Run options
-        spec.input('serial_clean',
+        spec.input(
+            'serial_clean',
             valid_type=orm.Bool,
             serializer=to_aiida_type,
             required=False,
@@ -272,12 +274,18 @@ class PdosWorkChain(ProtocolMixin, WorkChain):
         inputs = cls.get_protocol_inputs(protocol, overrides)
         builder = cls.get_builder()
 
-        base = PwBaseWorkChain.get_builder_from_protocol(*args, overrides=inputs.get('base', None), **kwargs)
-        base.pop('clean_workdir', None)
-        nscf = inputs.get('nscf', {'pw': {}})
+        base_scf = PwBaseWorkChain.get_builder_from_protocol(*args, overrides=inputs.get('base', None), **kwargs)
+        base_scf['pw'].pop('structure', None)
+        base_scf.pop('clean_workdir', None)
+        base_nscf = PwBaseWorkChain.get_builder_from_protocol(*args, overrides=inputs.get('nscf', None), **kwargs)
+        base_nscf['pw'].pop('structure', None)  # pw.parameters['SYSTEM'].pop('smearing', None)
+        base_nscf['pw']['parameters']['SYSTEM'].pop('smearing', None)
+        base_nscf['pw']['parameters']['SYSTEM'].pop('degauss', None)
+        base_nscf.pop('clean_workdir', None)
 
-        builder.base = base
-        builder.nscf.pw['parameters'] = orm.Dict(dict=nscf['pw']['parameters']) # pylint: disable=no-member
+        builder.structure = structure
+        builder.base_scf = base_scf
+        builder.base_nscf = base_nscf
         builder.parameters = orm.Dict(dict=inputs['parameters'])
         builder.dos.code = dos_code  # pylint: disable=no-member
         builder.projwfc.code = projwfc_code  # pylint: disable=no-member
@@ -300,8 +308,8 @@ class PdosWorkChain(ProtocolMixin, WorkChain):
 
     def run_scf(self):
         """Run an SCF calculation, to generate the wavefunction."""
-        inputs = AttributeDict(self.exposed_inputs(PwBaseWorkChain, 'base'))
-        inputs.pw.parameters = inputs.pw.parameters.get_dict()
+        inputs = AttributeDict(self.exposed_inputs(PwBaseWorkChain, 'base_scf'))
+        inputs.pw.structure = self.inputs.structure
 
         inputs.metadata.call_link_label = 'workchain_scf'
         inputs = prepare_process_inputs(PwBaseWorkChain, inputs)
@@ -336,32 +344,11 @@ class PdosWorkChain(ProtocolMixin, WorkChain):
         - Replace the ``pw.metadata.options``, if an alternative is specified for nscf.
 
         """
-        nscf_inputs = AttributeDict(self.exposed_inputs(PwBaseWorkChain, 'nscf'))
-        inputs = AttributeDict(self.exposed_inputs(PwBaseWorkChain, 'base'))
+        inputs = AttributeDict(self.exposed_inputs(PwBaseWorkChain, 'base_nscf'))
         inputs.pw.parent_folder = self.ctx.scf_parent_folder
+        inputs.pw.structure = self.inputs.structure
 
-        if 'kpoints' in nscf_inputs or 'kpoints_distance' in nscf_inputs:
-            for key in ['kpoints', 'kpoints_distance', 'kpoints_force_parity']:
-                inputs.pop(key, None)
-                if key in nscf_inputs:
-                    inputs[key] = nscf_inputs[key]
-
-        inputs.pw.parameters = inputs.pw.parameters.get_dict()
-        inputs.pw.parameters.setdefault('CONTROL', {})
-        inputs.pw.parameters['CONTROL']['calculation'] = 'nscf'
-        inputs.pw.parameters['CONTROL']['restart_mode'] = 'from_scratch'
-        inputs.pw.parameters.setdefault('SYSTEM', {})
-        inputs.pw.parameters['SYSTEM']['occupations'] = 'tetrahedra'
-        inputs.pw.parameters['SYSTEM'].pop('smearing', None)
-        inputs.pw.parameters['SYSTEM']['nosym'] = True
-        inputs.pw.parameters = recursive_merge(inputs.pw.parameters, nscf_inputs.pw.parameters.get_dict())
-
-        try:
-            inputs.pw.metadata.options = nscf_inputs.pw.metadata.options
-        except AttributeError:
-            pass
-
-        inputs.metadata.call_link_label = 'workchain_scf'
+        inputs.metadata.call_link_label = 'workchain_nscf'
         inputs = prepare_process_inputs(PwBaseWorkChain, inputs)
 
         if self.ctx.is_test_run:

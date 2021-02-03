@@ -617,29 +617,28 @@ def generate_workchain_pw(generate_workchain, generate_inputs_pw, generate_calc_
 
 
 @pytest.fixture
-def generate_workchain_pdos(generate_workchain, generate_inputs_pw, generate_kpoints_mesh, fixture_code):
+def generate_workchain_pdos(generate_workchain, generate_inputs_pw, fixture_code):
     """Generate an instance of a `PdosWorkChain`."""
 
     def _generate_workchain_pdos():
         from aiida_quantumespresso.utils.resources import get_default_options
-        from aiida.orm import Dict
 
         entry_point = 'quantumespresso.pdos.base'
 
-        pw_inputs = generate_inputs_pw()
-        kpoints = pw_inputs.pop('kpoints')
-        base = {'pw': pw_inputs, 'kpoints': kpoints}
-        nscf = {
-            'kpoints': generate_kpoints_mesh(4),
-            'pw': {
-                'metadata': {
-                    'options': get_default_options()
-                },
-                'parameters': Dict(dict={'SYSTEM': {
-                    'occupations': 'tetrahedra'
-                }})
-            },
-        }
+        scf_pw_inputs = generate_inputs_pw()
+        kpoints = scf_pw_inputs.pop('kpoints')
+        structure = scf_pw_inputs.pop('structure')
+        base_scf = {'pw': scf_pw_inputs, 'kpoints': kpoints}
+
+        nscf_pw_inputs = generate_inputs_pw()
+        nscf_pw_inputs.pop('kpoints')
+        nscf_pw_inputs.pop('structure')
+        nscf_pw_inputs['parameters']['CONTROL']['calculation'] = 'nscf'
+        nscf_pw_inputs['parameters']['SYSTEM']['occupations'] = 'tetrahedra'
+        nscf_pw_inputs['parameters']['SYSTEM']['nosym'] = True
+
+        base_nscf = {'pw': nscf_pw_inputs, 'kpoints': kpoints}
+
         parameters = {
             'Emin': -10,
             'Emax': 10,
@@ -654,8 +653,9 @@ def generate_workchain_pdos(generate_workchain, generate_inputs_pw, generate_kpo
         projwfc = {'code': fixture_code('quantumespresso.projwfc'), 'metadata': {'options': get_default_options()}}
 
         inputs = {
-            'base': base,
-            'nscf': nscf,
+            'structure': structure,
+            'base_scf': base_scf,
+            'base_nscf': base_nscf,
             'parameters': parameters,
             'dos': dos,
             'projwfc': projwfc,
