@@ -119,7 +119,23 @@ def get_parameter_schema():
     }
 
 
-def validate_dos_parameters(node, _):
+def validate_base_scf(value, _):
+    """Validate the base_scf parameters."""
+    parameters = value['pw']['parameters'].get_dict()
+    if parameters.get('CONTROL', {}).get('calculation', 'scf') != 'scf':
+        return '`CONTOL.calculation` in `base_scf.pw.parameters` is not set to `scf`.'
+
+
+def validate_base_nscf(value, _):
+    """Validate the base_nscf parameters."""
+    parameters = value['pw']['parameters'].get_dict()
+    if parameters.get('CONTROL', {}).get('calculation', 'scf') != 'nscf':
+        return '`CONTOL.calculation` in `base_nscf.pw.parameters` is not set to `nscf`.'
+    if parameters.get('SYSTEM', {}).get('occupations', None) != 'tetrahedra':
+        return '`SYSTEM.occupations` in `base_nscf.pw.parameters` is not set to `tetrahedra`.'
+
+
+def validate_dos_parameters(value, _):
     """Validate DOS parameters.
 
     - shared: Emin | Emax | DeltaE
@@ -127,7 +143,7 @@ def validate_dos_parameters(node, _):
     - projwfc.x only: ngauss | degauss | pawproj | n_proj_boxes | irmin(3,n_proj_boxes) | irmax(3,n_proj_boxes)
 
     """
-    jsonschema.validate(node.get_dict(), get_parameter_schema())
+    jsonschema.validate(value.get_dict(), get_parameter_schema())
 
 
 def clean_calcjob_remote(node):
@@ -173,7 +189,10 @@ class PdosWorkChain(ProtocolMixin, WorkChain):
             PwBaseWorkChain,
             namespace='base_scf',
             exclude=('clean_workdir', 'pw.structure', 'pw.parent_folder'),
-            namespace_options={'help': 'Inputs for the `PwBaseWorkChain` to run `scf` and `nscf` calculations.'}
+            namespace_options={
+                'help': 'Inputs for the `PwBaseWorkChain` to run `scf` and `nscf` calculations.',
+                'validator': validate_base_scf
+            }
         )
         spec.expose_inputs(
             PwBaseWorkChain,
@@ -181,7 +200,8 @@ class PdosWorkChain(ProtocolMixin, WorkChain):
             exclude=('clean_workdir', 'pw.structure', 'pw.parent_folder'),
             # include=('kpoints', 'kpoints_distance', 'kpoints_force_parity', 'pw.metadata.options', 'pw.parameters'),
             namespace_options={
-                'help': 'Optional inputs for `nscf` calculation, that override those set in the `base` namespace.'
+                'help': 'Optional inputs for `nscf` calculation, that override those set in the `base` namespace.',
+                'validator': validate_base_nscf
             }  # TODO optionally allow PwCalculation output parent_folder? # pylint: disable=fixme
         )
         spec.input(
