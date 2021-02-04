@@ -198,7 +198,6 @@ class PdosWorkChain(ProtocolMixin, WorkChain):
             PwBaseWorkChain,
             namespace='base_nscf',
             exclude=('clean_workdir', 'pw.structure', 'pw.parent_folder'),
-            # include=('kpoints', 'kpoints_distance', 'kpoints_force_parity', 'pw.metadata.options', 'pw.parameters'),
             namespace_options={
                 'help': 'Optional inputs for `nscf` calculation, that override those set in the `base` namespace.',
                 'validator': validate_base_nscf
@@ -298,7 +297,7 @@ class PdosWorkChain(ProtocolMixin, WorkChain):
         base_scf['pw'].pop('structure', None)
         base_scf.pop('clean_workdir', None)
         base_nscf = PwBaseWorkChain.get_builder_from_protocol(*args, overrides=inputs.get('nscf', None), **kwargs)
-        base_nscf['pw'].pop('structure', None)  # pw.parameters['SYSTEM'].pop('smearing', None)
+        base_nscf['pw'].pop('structure', None)
         base_nscf['pw']['parameters']['SYSTEM'].pop('smearing', None)
         base_nscf['pw']['parameters']['SYSTEM'].pop('degauss', None)
         base_nscf.pop('clean_workdir', None)
