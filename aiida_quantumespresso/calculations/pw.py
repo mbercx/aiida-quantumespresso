@@ -13,13 +13,13 @@ class PwCalculation(BasePwCpInputGenerator):
     """`CalcJob` implementation for the pw.x code of Quantum ESPRESSO."""
 
     _automatic_namelists = {
-        'scf': ['CONTROL', 'SYSTEM', 'ELECTRONS'],
+        'scf': ['CONTROL', 'SYSTEM', 'ELECTRONS', 'NLCG'],
         'nscf': ['CONTROL', 'SYSTEM', 'ELECTRONS'],
         'bands': ['CONTROL', 'SYSTEM', 'ELECTRONS'],
-        'relax': ['CONTROL', 'SYSTEM', 'ELECTRONS', 'IONS'],
-        'md': ['CONTROL', 'SYSTEM', 'ELECTRONS', 'IONS'],
-        'vc-md': ['CONTROL', 'SYSTEM', 'ELECTRONS', 'IONS', 'CELL'],
-        'vc-relax': ['CONTROL', 'SYSTEM', 'ELECTRONS', 'IONS', 'CELL'],
+        'relax': ['CONTROL', 'SYSTEM', 'ELECTRONS', 'NLCG', 'IONS'],
+        'md': ['CONTROL', 'SYSTEM', 'ELECTRONS', 'NLCG', 'IONS'],
+        'vc-md': ['CONTROL', 'SYSTEM', 'ELECTRONS', 'NLCG', 'IONS', 'CELL'],
+        'vc-relax': ['CONTROL', 'SYSTEM', 'ELECTRONS', 'NLCG', 'IONS', 'CELL'],
     }
 
     # Keywords that cannot be set by the user but will be set by the plugin
