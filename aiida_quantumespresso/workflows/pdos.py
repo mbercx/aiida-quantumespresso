@@ -119,6 +119,19 @@ def get_parameter_schema():
     }
 
 
+def validate_inputs(inputs, _):
+    """Validate the top level namespace."""
+    # Check that either the `base_scf` input or `base_nscf.pw.parent_folder` is provided.
+    import warnings
+    if 'base_scf' in inputs and 'parent_folder' in inputs['base_nscf']['pw']:
+        warnings.warn(
+            'Both the `base_scf` and `base_nscf.pw.parent_folder` inputs were provided. The SCF calculation will '
+            'be run with the inputs provided in `base_scf` and the `base_nscf.pw.parent_folder` will be ignored.'
+        )
+    elif not 'base_scf' in inputs and not 'parent_folder' in inputs['base_nscf']['pw']:
+        return 'Specifying either the `base_scf` or `base_nscf.pw.parent_folder` input is required.'
+
+
 def validate_base_scf(value, _):
     """Validate the base_scf parameters."""
     parameters = value['pw']['parameters'].get_dict()
@@ -191,17 +204,19 @@ class PdosWorkChain(ProtocolMixin, WorkChain):
             exclude=('clean_workdir', 'pw.structure', 'pw.parent_folder'),
             namespace_options={
                 'help': 'Inputs for the `PwBaseWorkChain` to run `scf` and `nscf` calculations.',
-                'validator': validate_base_scf
+                'validator': validate_base_scf,
+                'required': False,
+                'populate_defaults': False,
             }
         )
         spec.expose_inputs(
             PwBaseWorkChain,
             namespace='base_nscf',
-            exclude=('clean_workdir', 'pw.structure', 'pw.parent_folder'),
+            exclude=('clean_workdir', 'pw.structure'),
             namespace_options={
                 'help': 'Optional inputs for `nscf` calculation, that override those set in the `base` namespace.',
                 'validator': validate_base_nscf
-            }  # TODO optionally allow PwCalculation output parent_folder? # pylint: disable=fixme
+            }
         )
         spec.input(
             'parameters',
@@ -235,11 +250,14 @@ class PdosWorkChain(ProtocolMixin, WorkChain):
             required=False,
             serializer=to_aiida_type,
             help='Terminate workchain steps before submitting calculations (test purposes only).')
+        spec.inputs.validator = validate_inputs
 
         spec.outline(
             cls.setup,
-            cls.run_scf,
-            cls.inspect_scf,
+            if_(cls.should_run_scf)(
+                cls.run_scf,
+                cls.inspect_scf,
+            ),
             cls.run_nscf,
             cls.inspect_nscf,
             if_(cls.clean_serial)(
@@ -325,6 +343,10 @@ class PdosWorkChain(ProtocolMixin, WorkChain):
         """
         return self.ctx.clean_serial
 
+    def should_run_scf(self):
+        """Return whether the work chain should run an SCF calculation."""
+        return 'base_scf' in self.inputs
+
     def run_scf(self):
         """Run an SCF calculation, to generate the wavefunction."""
         inputs = AttributeDict(self.exposed_inputs(PwBaseWorkChain, 'base_scf'))
@@ -364,7 +386,8 @@ class PdosWorkChain(ProtocolMixin, WorkChain):
 
         """
         inputs = AttributeDict(self.exposed_inputs(PwBaseWorkChain, 'base_nscf'))
-        inputs.pw.parent_folder = self.ctx.scf_parent_folder
+        if 'base_scf' in self.inputs:
+            inputs.pw.parent_folder = self.ctx.scf_parent_folder
         inputs.pw.structure = self.inputs.structure
 
         inputs.metadata.call_link_label = 'workchain_nscf'
@@ -396,7 +419,6 @@ class PdosWorkChain(ProtocolMixin, WorkChain):
         self.ctx.nscf_emax = workchain.outputs.output_band.get_array('bands').max()
         self.ctx.nscf_parent_folder = workchain.outputs.remote_folder
         self.ctx.nscf_fermi = workchain.outputs.output_parameters.dict.fermi_energy
-        # TODO ensure fermi units are eV (and convert)?  # pylint: disable=fixme
 
     def _generate_dos_inputs(self):
         """Run DOS calculation, to generate total Densities of State."""
