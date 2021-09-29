@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """`CalcJob` implementation for the projwfc.x code of Quantum ESPRESSO."""
+import os
+
 from aiida.orm import RemoteData, FolderData, Dict, XyData
 from aiida_quantumespresso.calculations.namelists import NamelistsCalculation
 
@@ -29,7 +31,9 @@ class ProjwfcCalculation(NamelistsCalculation):
     xml_filename = 'data-file-schema.xml'
     _internal_retrieve_list = [
         NamelistsCalculation._PREFIX + '.pdos*',
-        NamelistsCalculation._OUTPUT_SUBFOLDER + f'{NamelistsCalculation._PREFIX}.save' + xml_filename
+        os.path.join(
+            NamelistsCalculation._default_parent_output_folder, f'{NamelistsCalculation._PREFIX}.save', xml_filename
+        )
     ]
 
     @classmethod
