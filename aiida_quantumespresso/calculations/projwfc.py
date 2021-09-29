@@ -25,7 +25,12 @@ class ProjwfcCalculation(NamelistsCalculation):
         ('PROJWFC', 'plotboxes', False),
     ]
     _default_parser = 'quantumespresso.projwfc'
-    _internal_retrieve_list = [NamelistsCalculation._PREFIX + '.pdos*']
+
+    xml_filename = 'data-file-schema.xml'
+    _internal_retrieve_list = [
+        NamelistsCalculation._PREFIX + '.pdos*',
+        NamelistsCalculation._OUTPUT_SUBFOLDER + f'{NamelistsCalculation._PREFIX}.save' + xml_filename
+    ]
 
     @classmethod
     def define(cls, spec):
@@ -45,6 +50,8 @@ class ProjwfcCalculation(NamelistsCalculation):
         spec.output('projections', valid_type=ProjectionData, required=False)
         spec.output('bands', valid_type=BandsData, required=False)
         spec.default_output_node = 'output_parameters'
+        spec.exit_code(303, 'ERROR_OUTPUT_XML_MISSING',
+            message='The retrieved folder did not contain the required required XML file.')
         spec.exit_code(310, 'ERROR_OUTPUT_STDOUT_READ',
             message='The stdout output file could not be read.')
         spec.exit_code(312, 'ERROR_OUTPUT_STDOUT_INCOMPLETE',
