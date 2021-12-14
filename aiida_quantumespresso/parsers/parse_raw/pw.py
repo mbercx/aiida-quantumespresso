@@ -492,6 +492,10 @@ def parse_stdout(stdout, input_parameters, parser_options=None, parsed_xml=None)
     # In case, parse for them before this point.
     # Put everything in a trajectory_data dictionary
     relax_steps = stdout.split('Self-consistent Calculation')[1:]
+
+    if len(relax_steps) == 0:
+        relax_steps = stdout.split('NLCG SUCCESS')
+
     relax_steps = [i.split('\n') for i in relax_steps]
 
     # now I create a bunch of arrays for every step.
@@ -653,6 +657,37 @@ def parse_stdout(stdout, input_parameters, parser_options=None, parsed_xml=None)
                     parsed_data['atomic_charges' + units_suffix] = default_charge_units
                 except QEOutputParsingError:
                     pass
+
+            elif 'KS-energy:' in line:
+                try:
+                    j = 0
+
+                    while True:
+                        j -= 1
+                        line2 = data_step[count + j]
+                        if '|moment|' in line2:
+                            j += 2
+                            break
+
+                    # Search for the magnetic moments
+                    mag_moments = []
+                    magmom_pattern = r'\s+\S+\s+\[.+\]\s+(\S+)'
+
+                    while True:
+                        line2 = data_step[count + j]
+                        res = re.match(magmom_pattern, line2)
+
+                        if res is not None:
+                            mag_moments.append(float(res.groups()[0]))
+
+                        if len(mag_moments) == nat:
+                            break
+
+                        j += 1
+
+                    trajectory_data.setdefault('atomic_magnetic_moments', []).append(mag_moments)
+                except Exception as exception:
+                    logs.warning.append(f'Error while parsing NLCG magnetic moments: {exception}')
 
             # grep energy and possibly, magnetization
             elif '!' in line:

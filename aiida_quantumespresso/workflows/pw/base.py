@@ -585,7 +585,10 @@ class PwBaseWorkChain(ProtocolMixin, BaseRestartWorkChain):
         PwCalculation.exit_codes.ERROR_NLCG_CONVERGENCE_NOT_REACHED,])
     def handle_nlcg_convergence_not_reached(self, calculation):
         nbnd = calculation.outputs['output_parameters']['number_of_bands']
-        nbnd_new = int(np.ceil(nbnd * 1.4))
+        nbnd_new = int(np.ceil(nbnd * 1.2))
+
+        if 'bands_increased' in self.ctx:
+            return ProcessHandlerReport(True, self.exit_codes.ERROR_KNOWN_UNRECOVERABLE_FAILURE)
 
         self.ctx.restart_calc = calculation
         self.ctx.inputs.parameters.setdefault('SYSTEM', {})['nbnd'] = nbnd_new
@@ -594,6 +597,7 @@ class PwBaseWorkChain(ProtocolMixin, BaseRestartWorkChain):
             nbnd, nbnd_new
         )
         self.report_error_handled(calculation, action)
+        self.ctx.bands_increased = True
         return ProcessHandlerReport(True)
 
     @process_handler(priority=410, exit_codes=[
