@@ -5,6 +5,7 @@ from aiida.common import AttributeDict, exceptions
 from aiida.common.lang import type_check
 from aiida.engine import BaseRestartWorkChain, ExitCode, ProcessHandlerReport, process_handler, while_
 from aiida.plugins import CalculationFactory, GroupFactory
+import numpy as np
 
 from aiida_quantumespresso.calculations.functions.create_kpoints_from_distance import create_kpoints_from_distance
 from aiida_quantumespresso.common.types import ElectronicType, RestartType, SpinType
@@ -552,6 +553,24 @@ class PwBaseWorkChain(ProtocolMixin, BaseRestartWorkChain):
         )
 
         self.set_restart_type(RestartType.FROM_SCRATCH)
+        self.report_error_handled(calculation, action)
+        return ProcessHandlerReport(True)
+
+    @process_handler(priority=450, exit_codes=[
+        PwCalculation.exit_codes.ERROR_NLCG_CONVERGENCE_NOT_REACHED,
+    ])
+    def handle_nlcg_convergence_not_reached(self, calculation):
+        """Handle the ``ERROR_NLCG_CONVERGENCE_NOT_REACHED`` error.
+
+        A failure of the NLCG to converge can be an indication that you are running with too little bands.
+        """
+        nbnd = calculation.outputs['output_parameters']['number_of_bands']
+        nbnd_new = int(np.ceil(nbnd * 1.4))
+
+        self.ctx.restart_calc = calculation
+        self.ctx.inputs.parameters.setdefault('SYSTEM', {})['nbnd'] = nbnd_new
+
+        action = f'increased number of bands from {nbnd} to {nbnd_new} and restarting from the last calculation'
         self.report_error_handled(calculation, action)
         return ProcessHandlerReport(True)
 

@@ -513,6 +513,8 @@ def parse_stdout(stdout, input_parameters, parser_options=None, parsed_xml=None,
     # In case, parse for them before this point.
     # Put everything in a trajectory_data dictionary
     relax_steps = stdout.split('Self-consistent Calculation')[1:]
+    if len(relax_steps) == 0:
+        relax_steps = stdout.split('running SCF ground state')[1:]
     relax_steps = [i.split('\n') for i in relax_steps]
 
     # now I create a bunch of arrays for every step.
@@ -676,7 +678,7 @@ def parse_stdout(stdout, input_parameters, parser_options=None, parsed_xml=None,
                     pass
 
             # grep energy and possibly, magnetization
-            elif '!' in line:
+            elif '!  ' in line:
                 try:
 
                     En = float(line.split('=')[1].split('Ry')[0]) * CONSTANTS.ry_to_ev
@@ -947,3 +949,55 @@ def grep_energy_from_line(line):
         return float(line.split('=')[1].split('Ry')[0]) * CONSTANTS.ry_to_ev
     except Exception:
         raise QEOutputParsingError('Error while parsing energy')
+
+
+def parse_nlcg(nlcg_out):
+    """Parses the nlcg content of a SIRIUS-QE `pw.x` calculation with direct minimization enabled.
+
+    :param nlcg_out: the nlcg.out content as a string
+    :returns: tuple of two dictionaries, with the parsed data and log messages, respectively
+    """
+
+    logs = get_logging_container()
+
+    iteration_pattern = r'(\d+)\s+([\d.-]+)[\s\t]+([\d.-]+e[+-]\d\d)\s+([\d.-]+e[+-]\d\d)'
+    iteration_fields = ('iteration', 'free energy', 'wfc_slope', 'eta_slope')
+    free_energy_pattern = r'F\s*:\s+([\d.-]+)'
+    ks_energy_pattern = r'KS-energy\s*:\s+([\d.-]+)'
+
+    iterations = []
+    free_energy = None
+    ks_energy = None
+    nlcg_converged = False
+
+    for line in nlcg_out.splitlines():
+
+        match_iteration = re.match(iteration_pattern, line)
+        match_free_energy = re.match(free_energy_pattern, line)
+        match_ks_energy = re.match(ks_energy_pattern, line)
+
+        if match_iteration:
+            it = match_iteration.groups()
+            iteration_data = (int(it[0]), float(it[1]), float(it[2]), float(it[3]))
+            iterations.append(dict(zip(iteration_fields, iteration_data)))
+
+        elif match_free_energy:
+            free_energy = float(match_free_energy.groups()[0])
+
+        elif match_ks_energy:
+            ks_energy = float(match_ks_energy.groups()[0])
+
+        if 'NLCG SUCCESS' in line:
+            nlcg_converged = True
+
+    if not nlcg_converged:
+        logs.error.append('ERROR_NLCG_CONVERGENCE_NOT_REACHED')
+
+    parsed_data = {
+        'iterations': iterations,
+        'free_energy': free_energy,
+        'ks_energy': ks_energy,
+        'nlcg_converged': nlcg_converged
+    }
+
+    return parsed_data, logs

@@ -30,6 +30,7 @@ class PwParser(BaseParser):
         self.exit_code_xml = None
         self.exit_code_stdout = None
         self.exit_code_parser = None
+        self.exit_code_nlcg = None
 
         try:
             settings = self.node.inputs.settings.get_dict()
@@ -54,6 +55,7 @@ class PwParser(BaseParser):
         parameters = self.node.inputs.parameters.get_dict()
         parsed_xml, logs_xml = self.parse_xml(dir_with_bands, parser_options)
         parsed_stdout, logs_stdout = self.parse_stdout(parameters, parser_options, parsed_xml, crash_file)
+        parsed_nlcg, logs_nlcg = self.parse_nlcg(parameters)
 
         parsed_bands = parsed_stdout.pop('bands', {})
         parsed_structure = parsed_stdout.pop('structure', {})
@@ -71,7 +73,7 @@ class PwParser(BaseParser):
         structure = self.build_output_structure(parsed_structure)
         kpoints = self.build_output_kpoints(parsed_parameters, structure)
         bands = self.build_output_bands(parsed_bands, kpoints)
-        trajectory = self.build_output_trajectory(parsed_trajectory, structure)
+        trajectory = self.build_output_trajectory(parsed_trajectory, parsed_xml, structure)
 
         # Determine whether the input kpoints were defined as a mesh or as an explicit list
         try:
@@ -98,6 +100,9 @@ class PwParser(BaseParser):
         atomic_occupations = parsed_parameters.pop('atomic_occupations', None)
         if atomic_occupations:
             self.out('output_atomic_occupations', orm.Dict(atomic_occupations))
+
+        if parsed_nlcg:
+            parsed_parameters['nlcg'] = parsed_nlcg
 
         self.out('output_parameters', orm.Dict(parsed_parameters))
 
@@ -145,9 +150,21 @@ class PwParser(BaseParser):
         if self.exit_code_xml:
             return self.exit(self.exit_code_xml)
 
+        if self.exit_code_nlcg:
+            return self.exit(self.exit_code_nlcg)
+
+        # For the sirius_nlcg testing, we'll only consider the 'scf' type calculation.
+        # Once the nlcg code has been tested properly, it's output should be integrated into the stdout from qe
+        if parsed_nlcg is {}:
+            exit_code = self.validate_electronic(trajectory, parsed_parameters, logs_stdout)
+            if exit_code:
+                return self.exit(exit_code)
+        elif 'ERROR_NLCG_CONVERGENCE_NOT_REACHED' in logs_nlcg['error']:
+            return self.exit(self.exit_codes.ERROR_NLCG_CONVERGENCE_NOT_REACHED)
+
         # First determine issues that can occurr for all calculation types. Note that the generic errors, that are
         # common to all types are done first. If a problem is found there, we return the exit code and don't continue
-        for validator in [self.validate_electronic, self.validate_dynamics, self.validate_ionic]:
+        for validator in [self.validate_dynamics, self.validate_ionic]:
             exit_code = validator(trajectory, parsed_parameters, logs_stdout)
             if exit_code:
                 return self.exit(exit_code)
@@ -394,6 +411,36 @@ class PwParser(BaseParser):
 
         return parsed_data, logs
 
+    def parse_nlcg(self, parameters):
+        """Parse the nlcg.out file."""
+        from aiida_quantumespresso.parsers.parse_raw.pw import parse_nlcg
+
+        filename_nlcg = PwCalculation._DIRECT_MINIMIZATION_OUT_FILE
+
+        logs = get_logging_container()
+        parsed_data = {}
+
+        if 'DIRECT_MINIMIZATION' not in parameters:
+            return parsed_data, logs
+
+        if filename_nlcg not in self.retrieved.list_object_names():
+            self.exit_code_nlcg = self.exit_codes.ERROR_OUTPUT_NLCG_MISSING
+            return parsed_data, logs
+
+        try:
+            nlcg_out = self.retrieved.get_object_content(filename_nlcg)
+        except IOError:
+            self.exit_code_nlcg = self.exit_codes.ERROR_OUTPUT_NLCG_READ
+            return parsed_data, logs
+
+        try:
+            parsed_data, logs = parse_nlcg(nlcg_out)
+        except Exception:
+            logs.critical.append(traceback.format_exc())
+            self.exit_code_nlcg = self.exit_codes.ERROR_UNEXPECTED_PARSER_EXCEPTION
+
+        return parsed_data, logs
+
     @staticmethod
     def build_output_parameters(parsed_stdout, parsed_xml):
         """Build the dictionary of output parameters from the raw parsed data.
@@ -435,13 +482,18 @@ class PwParser(BaseParser):
 
         return convert_qe_to_aiida_structure(parsed_structure, self.node.inputs.structure)
 
-    @staticmethod
-    def build_output_trajectory(parsed_trajectory, structure):
+    def build_output_trajectory(self, parsed_trajectory, parsed_xml, structure):
         """Build the output trajectory from the raw parsed trajectory data.
 
         :param parsed_trajectory: the raw parsed trajectory data
+        :param parsed_xml: the parsed XML data
+        :param structure: the `StructureData` output structure
         :return: a `TrajectoryData` or None
         """
+        if 'trajectory_data' in parsed_xml:
+            for key, value in parsed_xml['trajectory_data'].items():
+                parsed_trajectory[key] = value
+
         fractional = False
 
         if 'atomic_positions_relax' in parsed_trajectory:
