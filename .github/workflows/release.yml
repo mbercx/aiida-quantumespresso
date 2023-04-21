@@ -1,0 +1,33 @@
+name: release
+
+on:
+    pull_request:
+        types:
+            - opened
+        branches:
+            - 'release/**'
+
+jobs:
+    update-changelog:
+
+        if: github.repository == 'mbercx/aiida-quantumespresso'
+        runs-on: ubuntu-latest
+
+        steps:
+        -   name: Checkout source
+            uses: actions/checkout@v3
+            with:
+                fetch-depth: 0
+
+        -   name: Set up Python 3.11
+            uses: actions/setup-python@v2
+            with:
+                python-version: '3.11'
+
+        -   name: Update the CHANGELOG.md based on the latest commits
+            run: python .github/scripts/update_changelog.py
+
+        -   name: Commit the changelog update
+            uses: stefanzweifel/git-auto-commit-action@v4
+            with:
+                commit_message: Update `CHANGELOG.md`
