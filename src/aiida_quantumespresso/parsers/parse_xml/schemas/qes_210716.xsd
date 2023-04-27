@@ -514,6 +514,9 @@ Authors: Antonio Zambon, Paolo Giannozzi, Pietro Delugas
       <element type="nonNegativeInteger" name="diago_cg_maxiter" minOccurs="0"/>
       <element type="nonNegativeInteger" name="diago_ppcg_maxiter" minOccurs="0"/>
       <element type="positiveInteger" name="diago_david_ndim"    minOccurs="0"/>
+      <element type="positiveInteger" name="diago_rmm_ndim" minOccurs="0" default="4" />
+      <element type="boolean" name="diago_rmm_conv" minOccurs="0" default="false"/>
+      <element type="positiveInteger" name="diago_gs_nblock" minOccurs="0" default="16"/>
     </sequence>
   </complexType>
   <simpleType name="mixingModeType">

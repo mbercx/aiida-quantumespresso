@@ -22,8 +22,8 @@ class PhBaseWorkChain(ProtocolMixin, BaseRestartWorkChain):
 
     defaults = AttributeDict({
         'delta_factor_max_seconds': 0.95,
-        'delta_factor_alpha_mix': 0.90,
-        'alpha_mix': 0.70,
+        'delta_factor_alpha_mix': 0.80,
+        'alpha_mix': 0.40,
     })
 
     @classmethod
