@@ -30,6 +30,7 @@ class EpwCalculation(CalcJob):
     _DEFAULT_INPUT_FILE = 'aiida.in'
     _DEFAULT_OUTPUT_FILE = 'aiida.out'
     _OUTPUT_XML_TENSOR_FILE_NAME = 'tensors.xml'
+    _OUTPUT_A2F_FILE = 'aiida.a2f'
     _OUTPUT_SUBFOLDER = './out/'
     _FOLDER_SAVE = 'save'
     _FOLDER_DYNAMICAL_MATRIX = 'DYN_MAT'
@@ -57,6 +58,21 @@ class EpwCalculation(CalcJob):
                    help='the folder of a completed `PhCalculation`')
         spec.input('parent_folder_epw', required=False, valid_type=(orm.RemoteData, orm.RemoteStashFolderData),
                    help='folder that contains all files required to restart an `EpwCalculation`')
+        spec.inputs['metadata']['options']['parser_name'].default = 'quantumespresso.epw'
+
+        spec.output('output_parameters', valid_type=orm.Dict,
+                    help='The `output_parameters` output node of the successful calculation.')
+        spec.output('max_eigenvalue', valid_type=orm.XyData, required=False,
+                    help='The temperature dependence of the max eigenvalue.')
+        spec.output('a2f', valid_type=orm.XyData, required=False,
+                    help='The contents of the `.a2f` file.')
+
+        spec.exit_code(300, 'ERROR_NO_RETRIEVED_FOLDER',
+            message='The retrieved folder data node could not be accessed.')
+        spec.exit_code(310, 'ERROR_OUTPUT_STDOUT_READ',
+            message='The stdout output file could not be read.')
+        spec.exit_code(312, 'ERROR_OUTPUT_STDOUT_INCOMPLETE',
+            message='The stdout output file was incomplete probably because the calculation got interrupted.')
         # yapf: enable
 
     def prepare_for_submission(self, folder):
@@ -126,7 +142,7 @@ class EpwCalculation(CalcJob):
             # calculation
 
             prefix = self._PREFIX
-            outdir = self._OUTPUT_SUBFOLDER
+            outdir = PhCalculation._OUTPUT_SUBFOLDER
             fildvscf = PhCalculation._DVSCF_PREFIX
             fildyn = PhCalculation._OUTPUT_DYNAMICAL_MATRIX_PREFIX
 
@@ -168,7 +184,7 @@ class EpwCalculation(CalcJob):
             }
 
             for filename in (
-                'crystal.fmt', 'epwdata.fmt', vme_fmt_dict[parameters['INPUTEPW']['vme']], f'{self._PREFIX}.kgmap',
+                'selecq.fmt', 'crystal.fmt', 'epwdata.fmt', vme_fmt_dict[parameters['INPUTEPW']['vme']], f'{self._PREFIX}.kgmap',
                 f'{self._PREFIX}.kmap', f'{self._PREFIX}.ukk', self._OUTPUT_SUBFOLDER, self._FOLDER_SAVE
             ):
                 remote_list.append(
@@ -232,7 +248,10 @@ class EpwCalculation(CalcJob):
                 # namelist content; set to {} if not present, so that we leave an empty namelist
                 namelist = parameters.pop(namelist_name, {})
                 for key, value in sorted(namelist.items()):
-                    infile.write(convert_input_to_namelist_entry(key, value))
+                    input = convert_input_to_namelist_entry(key, value)
+                    if key == 'temps':
+                        input = input.replace("'", "")
+                    infile.write(input)
                 infile.write('/\n')
 
         if parameters:

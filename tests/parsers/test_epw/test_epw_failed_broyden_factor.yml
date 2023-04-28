@@ -1,0 +1,4 @@
+output_parameters:
+  allen_dynes: 0.005139
+  code_version: '5.7'
+  wall_time_seconds: 0.03
