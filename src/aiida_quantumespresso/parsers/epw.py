@@ -26,6 +26,14 @@ class EpwParser(BaseParser):
         parsed_epw, logs = self.parse_stdout(stdout, logs)
         parsed_data.update(parsed_epw)
 
+        if EpwCalculation._output_elbands_file in self.retrieved.base.repository.list_object_names():
+            elbands_contents = self.retrieved.base.repository.get_object_content(EpwCalculation._output_elbands_file)
+            self.out('el_band_structure', self.parse_bands(elbands_contents))
+
+        if EpwCalculation._output_phbands_file in self.retrieved.base.repository.list_object_names():
+            phbands_contents = self.retrieved.base.repository.get_object_content(EpwCalculation._output_phbands_file)
+            self.out('ph_band_structure', self.parse_bands(phbands_contents))
+
         if EpwCalculation._OUTPUT_A2F_FILE in self.retrieved.base.repository.list_object_names():
             a2f_contents = self.retrieved.base.repository.get_object_content(EpwCalculation._OUTPUT_A2F_FILE)
             a2f_xydata, parsed_a2f = self.parse_a2f(a2f_contents)
@@ -57,6 +65,7 @@ class EpwParser(BaseParser):
 
         data_type_regex = (
             ('allen_dynes', float, re.compile(r'\s+Estimated Allen-Dynes Tc =\s+([\d\.]+) K')),
+            ('fermi_energy_coarse', float, re.compile(r'\s+Fermi energy coarse grid =\s+([\d\.-]+)\seV')),
         )
         data_block_marker_parser = (
             ('max_eigenvalue', 'Superconducting transition temp. Tc', parse_max_eigenvalue),
@@ -103,3 +112,36 @@ class EpwParser(BaseParser):
             'fsthick': float(re.search(r'Fermi window \(eV\)\s+([\d\.]+)', content).groups()[0])
         }
         return a2f_xydata, parsed_data
+
+    @staticmethod
+    def parse_bands(content):
+        """Parse the contents of a band structure file."""
+        nbnd, nks = (
+            int(v) for v in re.search(
+                r'&plot nbnd=\s+(\d+), nks=\s+(\d+)', content
+            ).groups()
+        )
+        kpt_pattern = re.compile(r'\s\s([\d\.]+)' * 3)
+        band_pattern = re.compile(r'\s+([-\d\.]+)' * nbnd)
+
+        kpts = []
+        bands = []
+
+        for line in content.splitlines():
+            match_kpt = re.search(kpt_pattern, line)
+            if match_kpt:
+                kpts.append(list(match_kpt.groups()))
+
+            match_band = re.search(band_pattern, line)
+            if match_band:
+                bands.append(list(match_band.groups()))
+
+        kpoints_data = orm.KpointsData()
+        kpoints_data.set_kpoints(numpy.array(kpts, dtype=float))
+        bands = numpy.array(bands, dtype=float)
+
+        bands_data = orm.BandsData()
+        bands_data.set_kpointsdata(kpoints_data)
+        bands_data.set_bands(bands, units='meV')
+
+        return bands_data

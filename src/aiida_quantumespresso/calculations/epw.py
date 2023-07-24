@@ -28,10 +28,14 @@ class EpwCalculation(CalcJob):
     # Default input and output files
     _PREFIX = 'aiida'
     _DEFAULT_INPUT_FILE = 'aiida.in'
+    _kfpoints_input_file = 'kfpoints.kpt'
+    _qfpoints_input_file = 'qfpoints.kpt'
     _DEFAULT_OUTPUT_FILE = 'aiida.out'
     _OUTPUT_XML_TENSOR_FILE_NAME = 'tensors.xml'
     _OUTPUT_A2F_FILE = 'aiida.a2f'
     _OUTPUT_SUBFOLDER = './out/'
+    _output_elbands_file = 'band.eig'
+    _output_phbands_file = 'phband.freq'
     _FOLDER_SAVE = 'save'
     _FOLDER_DYNAMICAL_MATRIX = 'DYN_MAT'
 
@@ -66,6 +70,10 @@ class EpwCalculation(CalcJob):
                     help='The temperature dependence of the max eigenvalue.')
         spec.output('a2f', valid_type=orm.XyData, required=False,
                     help='The contents of the `.a2f` file.')
+        spec.output('el_band_structure', valid_type=orm.BandsData, required=False,
+                    help='The interpolated electronic band structure.')
+        spec.output('ph_band_structure', valid_type=orm.BandsData, required=False,
+                    help='The interpolated phonon band structure.')
 
         spec.exit_code(300, 'ERROR_NO_RETRIEVED_FOLDER',
             message='The retrieved folder data node could not be accessed.')
@@ -99,6 +107,7 @@ class EpwCalculation(CalcJob):
         local_copy_list = []
         remote_copy_list = []
         remote_symlink_list = []
+        retrieve_list = [self.metadata.options.output_filename]
 
         parameters = _uppercase_dict(self.inputs.parameters.get_dict(), dict_name='parameters')
         parameters = {k: _lowercase_dict(v, dict_name=k) for k, v in parameters.items()}
@@ -219,6 +228,13 @@ class EpwCalculation(CalcJob):
             parameters['INPUTEPW']['nqf1'] = mesh[0]
             parameters['INPUTEPW']['nqf2'] = mesh[1]
             parameters['INPUTEPW']['nqf3'] = mesh[2]
+        except AttributeError:
+            qfpoints = self.inputs.qfpoints.get_kpoints()
+            with folder.open(self._qfpoints_input_file, 'w') as handle:
+                handle.write(f'{len(qfpoints)} crystal\n')
+                for kpt in qfpoints:
+                    handle.write(' '.join([f'{coord:.12}' for coord in kpt]) + '   1.0\n')
+            parameters['INPUTEPW']['filqf'] = self._qfpoints_input_file
         except NotImplementedError as exception:
             raise exceptions.InputValidationError('Cannot get the fine q-point grid') from exception
 
@@ -228,8 +244,18 @@ class EpwCalculation(CalcJob):
             parameters['INPUTEPW']['nkf1'] = mesh[0]
             parameters['INPUTEPW']['nkf2'] = mesh[1]
             parameters['INPUTEPW']['nkf3'] = mesh[2]
+        except AttributeError:
+            kfpoints = self.inputs.kfpoints.get_kpoints()
+            with folder.open(self._kfpoints_input_file, 'w') as handle:
+                handle.write(f'{len(kfpoints)} crystal\n')
+                for kpt in kfpoints:
+                    handle.write(' '.join([f'{coord:.12}' for coord in kpt]) + '   1.0\n')
+            parameters['INPUTEPW']['filkf'] = self._kfpoints_input_file
         except NotImplementedError as exception:
             raise exceptions.InputValidationError('Cannot get the fine k-point grid') from exception
+
+        if parameters['INPUTEPW'].get('band_plot'):
+            retrieve_list += ['band.eig', 'phband.freq']
 
         # customized namelists, otherwise not present in the distributed epw code
         try:
@@ -271,9 +297,7 @@ class EpwCalculation(CalcJob):
         calcinfo.remote_copy_list = remote_copy_list
         calcinfo.remote_symlink_list = remote_symlink_list
 
-        # Retrieve by default the output file
-        calcinfo.retrieve_list = []
-        calcinfo.retrieve_list.append(self.metadata.options.output_filename)
+        calcinfo.retrieve_list = retrieve_list
         calcinfo.retrieve_list += settings.pop('ADDITIONAL_RETRIEVE_LIST', [])
 
         if settings:

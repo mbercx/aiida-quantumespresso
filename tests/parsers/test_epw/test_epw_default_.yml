@@ -10025,5 +10025,6 @@ output_parameters:
   allen_dynes: 13.93963
   code_version: '5.7'
   degaussw: 0.1
+  fermi_energy_coarse: 9.290638
   fsthick: 0.8
   wall_time_seconds: 9.83
