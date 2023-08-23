@@ -8,7 +8,8 @@ import pytest
 @pytest.mark.parametrize('test_name', (
     'default',
     'isotropic_eliashberg',
-    'bands'
+    'bands',
+    'bands2',
 ))
 def test_epw(fixture_localhost, generate_calc_job_node, generate_parser, data_regression, test_name):
     """Test ``OpenGridParser`` on the results of a simple ``open_grid.x`` calculation."""

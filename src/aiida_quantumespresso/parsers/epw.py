@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-from aiida import orm
 import re
+
+from aiida import orm
 import numpy
 
 from aiida_quantumespresso.calculations.epw import EpwCalculation
@@ -121,24 +122,26 @@ class EpwParser(BaseParser):
                 r'&plot nbnd=\s+(\d+), nks=\s+(\d+)', content
             ).groups()
         )
-        kpt_pattern = re.compile(r'\s\s([\d\.]+)' * 3)
+        kpt_pattern = re.compile(r'\s([\s-][\d\.]+)' * 3)
         band_pattern = re.compile(r'\s+([-\d\.]+)' * nbnd)
 
         kpts = []
         bands = []
 
-        for line in content.splitlines():
+        for number, line in enumerate(content.splitlines()):
             match_kpt = re.search(kpt_pattern, line)
-            if match_kpt:
+            if match_kpt and number % 2 == 1:
                 kpts.append(list(match_kpt.groups()))
 
             match_band = re.search(band_pattern, line)
-            if match_band:
+            if match_band and number % 2 == 0:
                 bands.append(list(match_band.groups()))
 
         kpoints_data = orm.KpointsData()
         kpoints_data.set_kpoints(numpy.array(kpts, dtype=float))
         bands = numpy.array(bands, dtype=float)
+
+        # raise ValueError('kpts', numpy.array(kpts, dtype=float).shape, 'bands', bands.shape)
 
         bands_data = orm.BandsData()
         bands_data.set_kpointsdata(kpoints_data)
