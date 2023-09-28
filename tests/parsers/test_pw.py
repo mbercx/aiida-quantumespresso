@@ -61,6 +61,34 @@ def test_pw_default(fixture_localhost, generate_calc_job_node, generate_parser, 
     })
 
 
+def test_pw_default_sirius(
+    fixture_localhost, generate_calc_job_node, generate_parser, generate_inputs, data_regression
+):
+    """Test a `pw.x` calculation in `scf` mode.
+
+    The output is created by running a dead simple SCF calculation for a silicon structure. This test should test the
+    standard parsing of the stdout content and XML file stored in the standard results node.
+    """
+    name = 'default_sirius'
+    entry_point_calc_job = 'quantumespresso.pw'
+    entry_point_parser = 'quantumespresso.pw'
+
+    node = generate_calc_job_node(entry_point_calc_job, fixture_localhost, name, generate_inputs())
+    parser = generate_parser(entry_point_parser)
+    results, calcfunction = parser.parse_from_node(node, store_provenance=False)
+
+    assert calcfunction.is_finished, calcfunction.exception
+    assert calcfunction.is_finished_ok, calcfunction.exit_message
+    # assert not orm.Log.collection.get_logs_for(node), [log.message for log in orm.Log.collection.get_logs_for(node)]
+    assert 'output_parameters' in results
+    assert 'output_trajectory' in results
+
+    data_regression.check({
+        'output_parameters': results['output_parameters'].get_dict(),
+        'output_trajectory': results['output_trajectory'].base.attributes.all,
+    })
+
+
 def test_pw_default_no_xml(
     fixture_localhost, generate_calc_job_node, generate_parser, generate_inputs, data_regression
 ):

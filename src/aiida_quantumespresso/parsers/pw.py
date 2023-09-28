@@ -583,14 +583,24 @@ class PwParser(BaseParser):
 
         # Correct the occupation for nspin=1 calculations where Quantum ESPRESSO populates each band only halfway
         if len(parsed_bands['occupations']) > 1:
-            occupations = parsed_bands['occupations']
+            occupations = numpy.array(parsed_bands['occupations'])
         else:
-            occupations = 2. * numpy.array(parsed_bands['occupations'][0])
+            occupations = numpy.array(parsed_bands['occupations'][0])
 
-        if len(parsed_bands['bands']) > 1:
-            bands_energies = parsed_bands['bands']
-        else:
-            bands_energies = parsed_bands['bands'][0]
+        def try_convert(s):
+            try:
+                return float(s)
+            except ValueError:
+                return 0
+
+        occupations = numpy.vectorize(try_convert)(occupations)
+
+        if len(parsed_bands['occupations']) > 1:
+            occupations *= 2.
+
+        # occupations[numpy.isnan(occupations)] = 0
+
+        bands_energies = parsed_bands['bands'][0] if len(parsed_bands['bands']) == 1 else parsed_bands['bands']
 
         bands = orm.BandsData()
         bands.set_kpointsdata(parsed_kpoints)

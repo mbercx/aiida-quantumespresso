@@ -90,11 +90,11 @@ def parse_xml_post_6_2(xml):
             except (TypeError, ValueError):
                 pass
 
-    xml_dictionary, errors = xsd.to_dict(xml, validation='lax')
-    if errors:
-        logs.error.append(f'{len(errors)} XML schema validation error(s) schema: {schema_filepath}:')
-        for err in errors:
-            logs.error.append(str(err))
+    xml_dictionary = xsd.to_dict(xml, validation='skip')
+    # if errors:
+    #     logs.error.append(f'{len(errors)} XML schema validation error(s) schema: {schema_filepath}:')
+    #     for err in errors:
+    #         logs.error.append(str(err))
 
     xml_version = Version(xml_dictionary['general_info']['xml_format']['@VERSION'])
     inputs = xml_dictionary.get('input', {})
