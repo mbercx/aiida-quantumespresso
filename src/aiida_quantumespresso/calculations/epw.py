@@ -139,13 +139,16 @@ class EpwCalculation(CalcJob):
             # Create the save folder with dvscf and dyn files
             folder.get_subfolder(self._FOLDER_SAVE, create=True)
 
-            # List of IBZ q-point to be added below EPW. To be removed when removed from EPW.
-            qibz_ar = []
-            for key, value in sorted(parent_folder_ph.creator.outputs.output_parameters.get_dict().items()):
-                if key.startswith('dynamical_matrix_'):
-                    qibz_ar.append(value['q_point'])
+            if 'NUMBER_OF_QPOINTS' in settings:
+                nqpt = settings.pop('NUMBER_OF_QPOINTS')
+            else:
+                # List of IBZ q-point to be added below EPW. To be removed when removed from EPW.
+                qibz_ar = []
+                for key, value in sorted(parent_folder_ph.creator.outputs.output_parameters.get_dict().items()):
+                    if key.startswith('dynamical_matrix_'):
+                        qibz_ar.append(value['q_point'])
 
-            nqpt = len(qibz_ar)
+                nqpt = len(qibz_ar)
 
             # Append the required contents of the `save` folder to the remove copy list, copied from the `ph.x`
             # calculation
@@ -193,7 +196,8 @@ class EpwCalculation(CalcJob):
             }
 
             for filename in (
-                'selecq.fmt', 'crystal.fmt', 'epwdata.fmt', vme_fmt_dict[parameters['INPUTEPW']['vme']], f'{self._PREFIX}.kgmap',
+                'selecq.fmt', 'crystal.fmt', 'epwdata.fmt', vme_fmt_dict[parameters['INPUTEPW']['vme']
+                                                                         ], f'{self._PREFIX}.kgmap',
                 f'{self._PREFIX}.kmap', f'{self._PREFIX}.ukk', self._OUTPUT_SUBFOLDER, self._FOLDER_SAVE
             ):
                 remote_list.append(
@@ -274,10 +278,10 @@ class EpwCalculation(CalcJob):
                 # namelist content; set to {} if not present, so that we leave an empty namelist
                 namelist = parameters.pop(namelist_name, {})
                 for key, value in sorted(namelist.items()):
-                    input = convert_input_to_namelist_entry(key, value)
+                    inputs = convert_input_to_namelist_entry(key, value)
                     if key == 'temps':
-                        input = input.replace("'", "")
-                    infile.write(input)
+                        inputs = inputs.replace("'", '')
+                    infile.write(inputs)
                 infile.write('/\n')
 
         if parameters:
