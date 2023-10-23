@@ -5,6 +5,7 @@
 from aiida.common.extendeddicts import AttributeDict
 
 pw = AttributeDict({
+    'cell_factor': 2.0,
     'conv_thr': 1e-6,
     'degauss': 0.,
     'diagonalization': 'david',

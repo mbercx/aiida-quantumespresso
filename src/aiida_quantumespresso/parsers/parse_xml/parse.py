@@ -3,6 +3,7 @@ from urllib.error import URLError
 
 import numpy as np
 from packaging.version import Version
+from pyexpat.errors import XML_ERROR_UNKNOWN_ENCODING
 from qe_tools import CONSTANTS
 from xmlschema import XMLSchema
 
@@ -533,4 +534,46 @@ def parse_xml_post_6_2(xml):
 
     xml_data['structure'] = structure_data
 
+    # Parse the "steps" from the XML to add to the trajectory data
+    trajectory_data = _parse_steps(xml_dictionary)
+
+    if trajectory_data is not None:
+        xml_data['trajectory_data'] = trajectory_data
+
     return xml_data, logs
+
+
+def _parse_steps(xml_dictionary):
+    """Parse the structural data and forces from the XML 'steps'."""
+    steps = xml_dictionary.get('step', None)
+
+    if steps is None:
+        return
+
+    calculation_type = xml_dictionary.get('input', {}).get('control_variables', {}).get('calculation', 'scf')
+
+    # For a `vc-relax` calculation, a final SCF is still run whose details are printed in the 'output' key
+    if calculation_type == 'vc-relax':
+        steps.append(xml_dictionary['output'])
+
+    natoms = int(steps[0]['atomic_structure']['@nat'])
+
+    lattice_vectors_relax = []
+    atomic_positions_relax = []
+    forces = []
+
+    for step in steps:
+
+        lattice_vectors_relax.append(
+            list(step['atomic_structure']['cell'].values())
+        )
+        atomic_positions_relax.append(
+            [site['$'] for site in step['atomic_structure']['atomic_positions']['atom']]
+        )
+        forces.append(np.array(step['forces']['$']).reshape([natoms, 3]).tolist())
+
+    return {
+        'lattice_vectors_relax': lattice_vectors_relax,
+        'atomic_positions_relax': atomic_positions_relax,
+        'forces': forces,
+    }
