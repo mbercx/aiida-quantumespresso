@@ -76,11 +76,7 @@ def parse_xml_post_6_2(xml):
     #  xml_dictionary['key']['@attr'] returns its attribute 'attr'
     #  xml_dictionary['key']['nested_key'] goes one level deeper.
 
-    xml_dictionary, errors = xsd.to_dict(xml, validation='lax')
-    if errors:
-        logs.error.append(f'{len(errors)} XML schema validation error(s) schema: {schema_filepath}:')
-        for err in errors:
-            logs.error.append(str(err))
+    xml_dictionary = xsd.to_dict(xml, validation='skip')
 
     xml_version = Version(xml_dictionary['general_info']['xml_format']['@VERSION'])
     inputs = xml_dictionary.get('input', {})
