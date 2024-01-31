@@ -95,6 +95,7 @@ aiida-quantumespresso = 'aiida_quantumespresso.cli:cmd_root'
 [project.entry-points.'aiida.parsers']
 'quantumespresso.cp' = 'aiida_quantumespresso.parsers.cp:CpParser'
 'quantumespresso.dos' = 'aiida_quantumespresso.parsers.dos:DosParser'
+'quantumespresso.epw' = 'aiida_quantumespresso.parsers.epw:EpwParser'
 'quantumespresso.matdyn' = 'aiida_quantumespresso.parsers.matdyn:MatdynParser'
 'quantumespresso.neb' = 'aiida_quantumespresso.parsers.neb:NebParser'
 'quantumespresso.ph' = 'aiida_quantumespresso.parsers.ph:PhParser'
